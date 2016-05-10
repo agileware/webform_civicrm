@@ -829,8 +829,8 @@ class wf_crm_webform_postprocess extends wf_crm_webform_base {
             $params['master_id'] = $params['geo_code_1'] = $params['geo_code_2'] = 'null';
           }
           $params['contact_id'] = $cid;
-          if (!empty($existing[$i])) {
-            $params['id'] = $existing[$i]['id'];
+          if (!empty($this->ent['contact'][$c][$location][$i])) {
+            $params['id'] = $this->ent['contact'][$c][$location][$i]['id'];
           }
           if ($this->locationIsEmpty($location, $params)) {
             // Delete this location if nothing was entered and this is a known contact
@@ -1701,17 +1701,38 @@ class wf_crm_webform_postprocess extends wf_crm_webform_base {
    * @return int
    */
   private function createBillingContact() {
-    $cid = wf_crm_aval($this->existing_contacts, 1);
+    $valid_keys = array (
+      'first_name' => TRUE,
+      'middle_name' => TRUE,
+      'last_name' => TRUE,
+      'contact_type' => TRUE,
+      'contact_subtype' => TRUE,
+    );
+
+    $contact['contact'][1] = array_intersect_key(
+      $this->data['contact'][1]['contact'][1],
+      $valid_keys
+    );
+
+    $contact['email'] = $this->data['contact'][1]['email'];
+
+    // Only get the cid from existing contacts if the name matches.
+    // This should probably try to do something smarter, like get a list of
+    // duplicates and find out if one has the same ID as an existing contact.
+    if (($contact[1]['first_name'] == $this->billing_params['first_name'] ) &&
+      ($contact[1]['last_name'] == $this->billing_params['last_name'] )) {
+      $cid = wf_crm_aval($this->existing_contacts, 1);
+    }
+
     if (!$cid) {
-      $contact = $this->data['contact'][1];
       // Only use middle name from billing if we are using the rest of the billing name as well
       if (empty($contact['contact'][1]['first_name']) && !empty($this->billing_params['middle_name'])) {
         $contact['contact'][1]['middle_name'] = $this->billing_params['middle_name'];
       }
-      $contact['contact'][1] += array(
-        'first_name' => $this->billing_params['first_name'],
-        'last_name' => $this->billing_params['last_name'],
-      );
+
+      $contact['contact'][1]['first_name'] = $this->billing_params['first_name'];
+      $contact['contact'][1]['last_name']  = $this->billing_params['last_name'];
+
       $cid = $this->findDuplicateContact($contact);
     }
     $address = array(
