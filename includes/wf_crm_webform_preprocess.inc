@@ -209,6 +209,12 @@ class wf_crm_webform_preprocess extends wf_crm_webform_base {
         $contributionCallbackUrl = 'civicrm/contribute/transact';
         $js_vars['processor_id_key'] = 'type';
       }
+
+      // Load billing block prefilled for the contact on form instead of the currently logged in user.
+      if(isset($_REQUEST['cid1'])) {
+        $contributionCallbackQuery['cid'] = $_REQUEST['cid1'];
+      }
+
       if (!empty($this->data['contribution'][1]['contribution'][1]['is_test'])) {
         // RM: This is needed in order for CiviCRM to know that this is a 'test' (i.e. 'preview' action in CiviCRM) transaction - otherwise, CiviCRM defaults to 'live' and returns the payment form with public key for the live payment processor!
         $contributionCallbackQuery['action'] = CRM_Core_Action::description(CRM_Core_Action::PREVIEW);
