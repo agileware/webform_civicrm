@@ -138,6 +138,16 @@ class wf_crm_webform_preprocess extends wf_crm_webform_base {
         if (!empty($this->data['membership'][$c]['number_of_membership'])) {
           $this->loadMemberships($c, $contact['id']);
         }
+
+        foreach($this->info['contact'][$c] as $ent_name => $c_ent) {
+          if($ent_name != 'contact') {
+            foreach($c_ent as $e_id => $entity) {
+              if (isset($entity['id'])) {
+                $this->ent['contact'][$c][$ent_name][$e_id] = array ('id' => $entity['id']);
+              }
+            }
+          }
+        }
       }
       // Load events from url if enabled, this will override loadParticipants
       if (!empty($this->data['reg_options']['allow_url_load'])) {
@@ -438,6 +448,8 @@ class wf_crm_webform_preprocess extends wf_crm_webform_base {
    *   Existing submission (optional)
    */
   private function fillForm(&$elements, $submitted = array()) {
+    // Storage for determining existing contact.
+    $existing = array();
     foreach ($elements as $eid => &$element) {
       if ($eid[0] == '#' || !is_array($element)) {
         continue;
@@ -552,8 +564,16 @@ class wf_crm_webform_preprocess extends wf_crm_webform_base {
               $element['#default_value'] = $val;
             }
           }
+          elseif ($table == 'address' && $name == 'master_id') {
+            if (!empty($existing[$c])) {
+              $element['#default_value'] = array();
+            }
+          }
           if ($name == 'existing') {
             wf_crm_fill_contact_value($this->node, $component, $element, $this->ent);
+            if(isset($this->info[$ent][$c][$table][$n][$name])) {
+              $existing[$c] = $this->info[$ent][$c][$table][$n][$name];
+            }
           }
           if ($name == 'contribution_page_id') {
             $element['#prefix'] = $this->displayLineItems();
