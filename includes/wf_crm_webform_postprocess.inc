@@ -1943,8 +1943,8 @@ class wf_crm_webform_postprocess extends wf_crm_webform_base {
     // Save soft credits
     if (!empty($contribution['soft'])) {
       // Get total amount either from contribution object or the total amount after line item calculation
-      $amount = $contribution['total_amount'] != null ? $contribution['total_amount'] : $this->totalContribution;
-      
+      $amount =  $this->totalContribution;
+
       // Get Default softcredit type
       $default_soft_credit_type = wf_civicrm_api('OptionValue', 'getsingle', array(
         'sequential' => 1,
