@@ -773,7 +773,7 @@ class wf_crm_webform_postprocess extends wf_crm_webform_base {
         }
       }
     }
-    
+
     foreach (wf_crm_location_fields() as $location) {
       if (!empty($contact[$location])) {
         $existing = array();
@@ -1669,9 +1669,17 @@ class wf_crm_webform_postprocess extends wf_crm_webform_base {
       $params['year'] = CRM_Core_Payment_Form::getCreditCardExpirationYear($params);
       $params['month'] = CRM_Core_Payment_Form::getCreditCardExpirationMonth($params);
     }
-
-    // Validate billing details
-    CRM_Core_Payment_Form::validatePaymentInstrument(wf_crm_aval($this->data, 'contribution:1:contribution:1:payment_processor_id'), $params, $card_errors, NULL);
+    // Validate state/province
+    if (!empty($params['country_id'])) {
+      $states = wf_crm_apivalues('address', 'getoptions', array('field' => 'state_province_id', 'country_id' => $params['country_id']));
+      if ($states && (empty($params['state_province_id']) || !isset($states[$params['state_province_id']]))) {
+        form_set_error('billing_state_province_id-5', t('!name field is required.', array('!name' => check_plain(ts('State/Province')))));
+        $valid = FALSE;
+      }
+    }
+    // Validate credit card number & cvv2
+    $processor_instance = \Civi\Payment\System::singleton()->getById($this->payment_processor['id']);
+    $processor_instance->validatePaymentInstrument($params, $card_errors);
     foreach ($card_errors as $field => $msg) {
       form_set_error($field, $msg);
       $valid = FALSE;
