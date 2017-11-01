@@ -1946,7 +1946,8 @@ class wf_crm_admin_form {
     if (strpos($field['form_key'], '_custom_') && $type == 'contact') {
       $sid = explode('_custom', $field['form_key']);
       $sid = $sid[0] . '_fieldset';
-      $customGroupKey = explode('_', $field['form_key'])[4];
+      $customGroupKey = explode('_', $field['form_key']);
+      $customGroupKey = $customGroupKey[4];
       $allow_create = $isCustom = TRUE;
     }
     else {
