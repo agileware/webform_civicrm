@@ -829,8 +829,9 @@ class wf_crm_webform_postprocess extends wf_crm_webform_base {
             $params['master_id'] = $params['geo_code_1'] = $params['geo_code_2'] = 'null';
           }
           $params['contact_id'] = $cid;
-          if (!empty($this->ent['contact'][$c][$location][$i])) {
-            $params['id'] = $this->ent['contact'][$c][$location][$i]['id'];
+
+          if (!empty($existing[$i])) {
+            $params['id'] = $existing[$i]['id'];
           }
           if ($this->locationIsEmpty($location, $params)) {
             // Delete this location if nothing was entered and this is a known contact
