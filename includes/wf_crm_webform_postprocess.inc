@@ -2048,6 +2048,7 @@ class wf_crm_webform_postprocess extends wf_crm_webform_base {
         $lineItemArray = wf_civicrm_api('LineItem', 'get', array(
           'entity_table' => "civicrm_membership",
           'entity_id' => $item['entity_id'],
+          'options' => array('sort' => 'id DESC'),
         ));
         if ($lineItemArray['count'] != 0) {
           // We only require first membership (signup) entry to make this work.
