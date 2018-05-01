@@ -1558,17 +1558,44 @@ class wf_crm_webform_postprocess extends wf_crm_webform_base {
     // These are hard-coded in CiviCRM so we may as well hard-code them here
     // Value = translated label to be shown during validation or FALSE if not required
     $billing_fields = array(
-      'credit_card_number' => ts('Card Number'),
-      'cvv2' => ts('Security Code'),
-      'credit_card_type' => ts('Card Type'),
-      'billing_first_name' => ts('Billing First Name'),
+      'credit_card_number' => array(
+          "label" => ts('Card Number'),
+          "is_billing_field" => FALSE,
+      ),
+      'cvv2' => array(
+          "label" => ts('Security Code'),
+          "is_billing_field" => FALSE,
+      ),
+      'credit_card_type' => array(
+          "label" => ts('Card Type'),
+          "is_billing_field" => FALSE,
+      ),
+      'billing_first_name' => array(
+          "label" => ts('Billing First Name'),
+          "is_billing_field" => TRUE,
+      ),
       'billing_middle_name' => FALSE,
-      'billing_last_name' => ts('Billing Last Name'),
-      'billing_street_address-5' => ts('Street Address'),
-      'billing_city-5' => ts('City'),
-      'billing_country_id-5' => ts('Country'),
+      'billing_last_name' => array(
+          "label" => ts('Billing Last Name'),
+          "is_billing_field" => TRUE,
+      ),
+      'billing_street_address-5' => array(
+          "label" => ts('Street Address'),
+          "is_billing_field" => TRUE,
+      ),
+      'billing_city-5' => array(
+          "label" => ts('City'),
+          "is_billing_field" => TRUE,
+      ),
+      'billing_country_id-5' => array(
+          "label" => ts('Country'),
+          "is_billing_field" => TRUE,
+      ),
       'billing_state_province_id-5' => FALSE,
-      'billing_postal_code-5' => ts('Postal Code'),
+      'billing_postal_code-5' => array(
+          "label" => ts('Postal Code'),
+          "is_billing_field" => TRUE,
+      ),
     );
     if (!empty($_POST['stripe_token'])) {
       // Using Stripe payment processor - cc fields not posted
@@ -1588,10 +1615,15 @@ class wf_crm_webform_postprocess extends wf_crm_webform_base {
       $_POST['credit_card_exp_date']['M'] = '12';
       $_POST['credit_card_exp_date']['Y'] = '2099';
     }
+
+    $billing_address_same = (isset($_POST["billing_address_same"]) && $_POST["billing_address_same"]);
+
     foreach ($billing_fields as $field => $label) {
       if (empty($_POST[$field]) && $label !== FALSE) {
-        form_set_error($field, t('!name field is required.', array('!name' => check_plain($label))));
-        $valid = FALSE;
+        if(!$label["is_billing_field"] || ($label["is_billing_field"] && !$billing_address_same)) {
+            form_set_error($field, t('!name field is required.', array('!name' => check_plain($label["label"]))));
+            $valid = FALSE;
+        }
       }
       if (!empty($_POST[$field])) {
         $name = str_replace('billing_', '', str_replace('-5', '', $field));
@@ -1649,35 +1681,103 @@ class wf_crm_webform_postprocess extends wf_crm_webform_base {
   }
 
   /**
+   * Checking if billing address is identical to the other addresses of the processed contact.
+   * @param $contact
+   * @return bool, either address is identical to the other addresses of the processed contact.
+   */
+  private function isBillingAddressIdentical($contact) {
+      $addresses = $contact["address"];
+      foreach ($addresses as $address) {
+          if ($address["street_address"] == $this->billing_params["street_address"] &&
+              $address["city"] == $this->billing_params["city"] &&
+              $address["postal_code"] == $this->billing_params["postal_code"] &&
+              $address["country_id"] == $this->billing_params["country_id"] &&
+              (!$address["state_province_id"] || ($address["state_province_id"] == $this->billing_params["state_province_id"]))) {
+              return TRUE;
+          }
+      }
+      return FALSE;
+  }
+
+  /**
+   * Checking if billing email address is identical to the other email addresses of the processed contact.
+   * @param $contact
+   * @return bool, either email is identical to the other email addresses of the processed contact.
+   */
+  private function isBillingEmailIdentical($contact) {
+      $emails = $contact["email"];
+      foreach ($emails as $email) {
+        if($email["email"] == $this->billing_params["email"]) {
+            return TRUE;
+        }
+      }
+      return FALSE;
+  }
+
+  /**
+   * CiviCRM Webform generates contact's address with abbreviation of state/province.
+   * This method takes the state/province abbreviation and replaces it with acutual id of the state.
+   * @param $contact
+   */
+  private function modifyStateProvinceId(&$contact) {
+      $addresses = $contact["address"];
+      foreach($addresses as $index => $address) {
+          $state_province = new CRM_Core_DAO_StateProvince();
+          $state_province->abbreviation = $address["state_province_id"];
+          if($state_province->find(TRUE)) {
+              $contact["address"][$index]["state_province_id"] = $state_province->id;
+          } else {
+              $contact["address"][$index]["state_province_id"] = NULL;
+          }
+      }
+  }
+
+  /**
    * Create contact 1 if not already existing (required by contribution.transact)
    * @return int
    */
   private function createBillingContact() {
     $cid = wf_crm_aval($this->existing_contacts, 1);
+    $billing_address_same = (isset($_POST["billing_address_same"]) && $_POST["billing_address_same"]);
+    $foundExistingContact = FALSE;
+    $contact = $this->data['contact'][1];
+    $this->modifyStateProvinceId($contact);
+
     if (!$cid) {
-      $contact = $this->data['contact'][1];
-      // Only use middle name from billing if we are using the rest of the billing name as well
-      if (empty($contact['contact'][1]['first_name']) && !empty($this->billing_params['middle_name'])) {
-        $contact['contact'][1]['middle_name'] = $this->billing_params['middle_name'];
+      if (!$billing_address_same) {
+        // Only use middle name from billing if we are using the rest of the billing name as well
+        if (empty($contact['contact'][1]['first_name']) && !empty($this->billing_params['middle_name'])) {
+          $contact['contact'][1]['middle_name'] = $this->billing_params['middle_name'];
+        }
+        $contact['contact'][1] += array(
+          'first_name' => $this->billing_params['first_name'],
+          'last_name' => $this->billing_params['last_name'],
+        );
       }
-      $contact['contact'][1] += array(
-        'first_name' => $this->billing_params['first_name'],
-        'last_name' => $this->billing_params['last_name'],
-      );
+
       $cid = $this->findDuplicateContact($contact);
+      if($cid) {
+        $foundExistingContact = FALSE;
+      }
+    } else {
+      $foundExistingContact = TRUE;
     }
-    $address = array(
-      'street_address' => $this->billing_params['street_address'],
-      'city' => $this->billing_params['city'],
-      'country_id' => $this->billing_params['country_id'],
-      'state_province_id' => wf_crm_aval($this->billing_params, 'state_province_id'),
-      'postal_code' => $this->billing_params['postal_code'],
-      'location_type_id' => 'Billing',
-    );
-    $email = array(
-      'email' => $this->billing_params['email'],
-      'location_type_id' => 'Billing',
-    );
+
+    if (!$billing_address_same) {
+      $address = array(
+        'street_address' => $this->billing_params['street_address'],
+        'city' => $this->billing_params['city'],
+        'country_id' => $this->billing_params['country_id'],
+        'state_province_id' => wf_crm_aval($this->billing_params, 'state_province_id'),
+        'postal_code' => $this->billing_params['postal_code'],
+        'location_type_id' => 'Billing',
+      );
+      $email = array(
+        'email' => $this->billing_params['email'],
+        'location_type_id' => 'Billing',
+      );
+    }
+
     if (!$cid) {
       $cid = $this->createContact($contact);
     }
@@ -1688,17 +1788,56 @@ class wf_crm_webform_postprocess extends wf_crm_webform_base {
           'location_type_id' => 'Billing',
         ));
         // Use first id if we have any results
-        if (!empty($result['values'])) {
+        if (!empty($result['values']) && !$billing_address_same) {
           $ids = array_keys($result['values']);
           ${$loc}['id'] = $ids[0];
         }
       }
     }
+
     if ($cid) {
-      $address['contact_id'] = $email['contact_id'] = $this->ent['contact'][1]['id'] = $cid;
-      wf_civicrm_api('address', 'create', $address);
-      wf_civicrm_api('email', 'create', $email);
+      $this->ent['contact'][1]['id'] = $cid;
+      if (!$billing_address_same) {
+        $address['contact_id'] = $email['contact_id'] = $cid;
+        if (!$this->isBillingAddressIdentical($contact)) {
+          wf_civicrm_api('address', 'create', $address);
+        }
+        if (!$this->isBillingEmailIdentical($contact) || !$foundExistingContact) {
+          wf_civicrm_api('email', 'create', $email);
+        }
+      } else {
+        $contact = $this->data['contact'][1];
+
+        if (isset($contact["address"]) && count($contact["address"])) {
+          foreach ($contact["address"] as $address) {
+            $address['contact_id'] = $cid;
+            $address['state_province_id'] = NULL;
+            $address['sequential'] = TRUE;
+            $existingAddress = wf_civicrm_api('address', 'get', array(
+                "contact_id"       => $cid,
+                "location_type_id" => $address["location_type_id"],
+            ));
+            if (!$existingAddress["count"]) {
+                wf_civicrm_api('address', 'create', $address);
+            }
+          }
+        }
+
+        if (isset($contact["email"]) && count($contact["email"])) {
+          foreach ($contact["email"] as $email) {
+            $email['contact_id'] = $cid;
+            $existingEmail = wf_civicrm_api('email', 'get', array(
+                "contact_id"       => $cid,
+                "location_type_id" => $email["location_type_id"],
+            ));
+            if (!$existingEmail["count"]) {
+                wf_civicrm_api('email', 'create', $email);
+            }
+          }
+        }
+      }
     }
+
     return $cid;
   }
 
