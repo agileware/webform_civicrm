@@ -676,7 +676,12 @@ class wf_crm_webform_postprocess extends wf_crm_webform_base {
             unset($exist[$k]);
           }
         }
-        $params[$name] = array_unique(array_merge($params[$name], $exist));
+        if(is_array($params[$name])) {
+          $params[$name] = array_unique(array_merge($params[$name], $exist));
+        }
+        else {
+          $params[$name]= array_unique($exist);
+        }
       }
     }
     $params['id'] = $this->ent['contact'][$c]['id'];
@@ -800,6 +805,7 @@ class wf_crm_webform_postprocess extends wf_crm_webform_base {
             $params['master_id'] = $params['geo_code_1'] = $params['geo_code_2'] = 'null';
           }
           $params['contact_id'] = $cid;
+
           if (!empty($existing[$i])) {
             $params['id'] = $existing[$i]['id'];
           }
@@ -1646,7 +1652,8 @@ class wf_crm_webform_postprocess extends wf_crm_webform_base {
       }
     }
     // Validate credit card number & cvv2
-    CRM_Core_Payment_Form::validateCreditCard($params, $card_errors, wf_crm_aval($this->data, 'contribution:1:contribution:1:payment_processor_id'));
+    $processor_instance = \Civi\Payment\System::singleton()->getById(wf_crm_aval($this->data, 'contribution:1:contribution:1:payment_processor_id'));
+    $processor_instance->validatePaymentInstrument($params, $card_errors);
     foreach ($card_errors as $field => $msg) {
       form_set_error($field, $msg);
       $valid = FALSE;
@@ -1737,11 +1744,33 @@ class wf_crm_webform_postprocess extends wf_crm_webform_base {
    * @return int
    */
   private function createBillingContact() {
-    $cid = wf_crm_aval($this->existing_contacts, 1);
     $billing_address_same = (isset($_POST["billing_address_same"]) && $_POST["billing_address_same"]);
     $foundExistingContact = FALSE;
-    $contact = $this->data['contact'][1];
+    $valid_keys = array (
+      'first_name' => TRUE,
+      'middle_name' => TRUE,
+      'last_name' => TRUE,
+      'contact_type' => TRUE,
+      'contact_subtype' => TRUE,
+    );
+
+    $contact['contact'][1] = array_intersect_key(
+      $this->data['contact'][1]['contact'][1],
+      $valid_keys
+    );
+
+    $contact['email'] = $this->data['contact'][1]['email'];
+    $contact['address'] = $this->data['contact'][1]['address'];
     $this->modifyStateProvinceId($contact);
+
+    // Only get the cid from existing contacts if the name matches.
+    // This should probably try to do something smarter, like get a list of
+    // duplicates and find out if one has the same ID as an existing contact.
+    $cid = NULL;
+    if ($billing_address_same || ((isset($this->billing_params["first_name"]) && $contact['contact'][1]['first_name'] == $this->billing_params['first_name'] ) &&
+        (isset($this->billing_params["last_name"]) && $contact['contact'][1]['last_name'] == $this->billing_params['last_name'] ))) {
+      $cid = wf_crm_aval($this->existing_contacts, 1);
+    }
 
     if (!$cid) {
       if (!$billing_address_same) {
@@ -1749,10 +1778,9 @@ class wf_crm_webform_postprocess extends wf_crm_webform_base {
         if (empty($contact['contact'][1]['first_name']) && !empty($this->billing_params['middle_name'])) {
           $contact['contact'][1]['middle_name'] = $this->billing_params['middle_name'];
         }
-        $contact['contact'][1] += array(
-          'first_name' => $this->billing_params['first_name'],
-          'last_name' => $this->billing_params['last_name'],
-        );
+
+        $contact['contact'][1]['first_name'] = $this->billing_params['first_name'];
+        $contact['contact'][1]['last_name']  = $this->billing_params['last_name'];
       }
 
       $cid = $this->findDuplicateContact($contact);
@@ -1985,17 +2013,17 @@ class wf_crm_webform_postprocess extends wf_crm_webform_base {
     // @see webform_civicrm_civicrm_alterPaymentProcessorParams
     $params['webform_redirect_cancel'] = $this->getIpnRedirectUrl('cancel');
     $params['webform_redirect_success'] = $this->getIpnRedirectUrl('success');
-    
+
     if (method_exists($paymentProcessor, 'doTransferCheckout')) {
       // doTransferCheckout is deprecated but some processors might still implement it.
-      // Somewhere around 4.6 it was replaced by doPayment as the method of choice, 
+      // Somewhere around 4.6 it was replaced by doPayment as the method of choice,
       // but to be safe still call it if it exists for now.
       $paymentProcessor->doTransferCheckout($params, 'contribute');
     }
     else {
       $paymentProcessor->doPayment($params);
-    }    
-    
+    }
+
   }
 
   /**

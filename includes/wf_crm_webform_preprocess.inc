@@ -130,6 +130,16 @@ class wf_crm_webform_preprocess extends wf_crm_webform_base {
         if (!empty($this->data['membership'][$c]['number_of_membership'])) {
           $this->loadMemberships($c, $contact['id']);
         }
+
+        foreach($this->info['contact'][$c] as $ent_name => $c_ent) {
+          if($ent_name != 'contact') {
+            foreach($c_ent as $e_id => $entity) {
+              if (isset($entity['id'])) {
+                $this->ent['contact'][$c][$ent_name][$e_id] = array ('id' => $entity['id']);
+              }
+            }
+          }
+        }
       }
       // Load events from url if enabled, this will override loadParticipants
       if (!empty($this->data['reg_options']['allow_url_load'])) {
@@ -190,6 +200,7 @@ class wf_crm_webform_preprocess extends wf_crm_webform_base {
         'scope' => 'footer',
       );
       $page_id = $this->data['contribution'][1]['contribution'][1]['contribution_page_id'];
+
       if (version_compare($this->civicrm_version, '4.7', '>=')) {
         $currency = $this->contribution_page['currency'];
         $contributionCallbackQuery = array('currency' => $currency, 'snippet' => 4);
@@ -201,6 +212,12 @@ class wf_crm_webform_preprocess extends wf_crm_webform_base {
         $contributionCallbackUrl = 'civicrm/contribute/transact';
         $js_vars['processor_id_key'] = 'type';
       }
+
+      // Load billing block prefilled for the contact on form instead of the currently logged in user.
+      if(isset($_REQUEST['cid1'])) {
+        $contributionCallbackQuery['cid'] = $_REQUEST['cid1'];
+      }
+
       if (!empty($this->data['contribution'][1]['contribution'][1]['is_test'])) {
         // RM: This is needed in order for CiviCRM to know that this is a 'test' (i.e. 'preview' action in CiviCRM) transaction - otherwise, CiviCRM defaults to 'live' and returns the payment form with public key for the live payment processor!
         $contributionCallbackQuery['action'] = CRM_Core_Action::description(CRM_Core_Action::PREVIEW);
@@ -424,6 +441,8 @@ class wf_crm_webform_preprocess extends wf_crm_webform_base {
    *   Existing submission (optional)
    */
   private function fillForm(&$elements, $submitted = array()) {
+    // Storage for determining existing contact.
+    $existing = array();
     foreach ($elements as $eid => &$element) {
       if ($eid[0] == '#' || !is_array($element)) {
         continue;
@@ -474,6 +493,18 @@ class wf_crm_webform_preprocess extends wf_crm_webform_base {
             if (($element['#type'] == 'checkboxes' || !empty($element['#multiple'])) && !is_array($val)) {
               $val = wf_crm_explode_multivalue_str($val);
             }
+            if ('address' == $table && 'master_id' == $name) {
+              foreach($val as $i => $v) {
+                foreach($this->info['contact'] as $c => $contact) {
+                  foreach($contact['address'] as $a => $address) {
+                    if($v == $address['id']){
+                      $val[$i] = $c;
+                      break 2;
+                    }
+                  }
+                }
+              }
+            }
             if ($element['#type'] != 'checkboxes' && $element['#type'] != 'date'
               && empty($element['#multiple']) && is_array($val)) {
               // If there's more than one value for a non-multi field, pick the most appropriate
@@ -507,8 +538,16 @@ class wf_crm_webform_preprocess extends wf_crm_webform_base {
               $element['#default_value'] = $val;
             }
           }
+          elseif ($table == 'address' && $name == 'master_id') {
+            if (!empty($existing[$c])) {
+              $element['#default_value'] = array();
+            }
+          }
           if ($name == 'existing') {
             wf_crm_fill_contact_value($this->node, $component, $element);
+            if(isset($this->info[$ent][$c][$table][$n][$name])) {
+              $existing[$c] = $this->info[$ent][$c][$table][$n][$name];
+            }
           }
           if ($name == 'contribution_page_id') {
             $element['#prefix'] = $this->displayLineItems();
