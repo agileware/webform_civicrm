@@ -1794,6 +1794,33 @@ class wf_crm_webform_postprocess extends wf_crm_webform_base {
       $result = $this->contributionRecur($contributionParams);
     }
     else {
+
+      if ($contributionParams['billing_address_same'] == 1) {  
+        $contactDetails = $this->data['contact'][1];
+        $contributionParams['billing_first_name'] = $contactDetails['contact'][1]['first_name'];
+        $contributionParams['billing_last_name'] = $contactDetails['contact'][1]['last_name'];
+        $contributionParams['billing_middle_name'] = $contactDetails['contact'][1]['middle_name'];
+
+        $contributionParams['first_name'] = $contactDetails['contact'][1]['first_name'];
+        $contributionParams['last_name'] = $contactDetails['contact'][1]['last_name'];
+        $contributionParams['middle_name'] = $contactDetails['contact'][1]['middle_name'];
+
+        foreach($contactDetails['address'] as $address) {
+          $contributionParams['billing_street_address-5'] = $address['street_address'];
+          $contributionParams['billing_city-5'] = $address['city'];
+          $contributionParams['billing_country_id-5'] = $address['country_id'];
+          $contributionParams['billing_postal_code-5'] = $address['postal_code'];
+          $contributionParams['billing_state_province_id-5'] = $address['state_province_id'];
+
+          $contributionParams['street_address'] = $address['street_address'];
+          $contributionParams['city'] = $address['city'];
+          $contributionParams['country_id'] = $address['country_id'];
+          $contributionParams['postal_code'] = $address['postal_code'];
+          $contributionParams['state_province_id'] = $address['state_province_id'];
+          break;
+        }
+      }
+
       $result = wf_civicrm_api('contribution', 'transact', $contributionParams);
     }
 
