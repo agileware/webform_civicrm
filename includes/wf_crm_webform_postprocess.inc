@@ -1706,6 +1706,90 @@ class wf_crm_webform_postprocess extends wf_crm_webform_base {
   }
 
   /**
+   * Checking if billing address is identical to the other addresses of the processed contact.
+   * @param $contact
+   * @return bool, either address is identical to the other addresses of the processed contact.
+   */
+  private function isBillingAddressIdentical($contact) {
+      $addresses = $contact["address"];
+      foreach ($addresses as $address) {
+          if ($address["street_address"] == $this->billing_params["street_address"] &&
+              $address["city"] == $this->billing_params["city"] &&
+              $address["postal_code"] == $this->billing_params["postal_code"] &&
+              $address["country_id"] == $this->billing_params["country_id"] &&
+              (!$address["state_province_id"] || ($address["state_province_id"] == $this->billing_params["state_province_id"]))) {
+              return TRUE;
+          }
+      }
+      return FALSE;
+  }
+
+  /**
+   * Checking if billing email address is identical to the other email addresses of the processed contact.
+   * @param $contact
+   * @return bool, either email is identical to the other email addresses of the processed contact.
+   */
+  private function isBillingEmailIdentical($contact) {
+      $emails = $contact["email"];
+      foreach ($emails as $email) {
+        if($email["email"] == $this->billing_params["email"]) {
+            return TRUE;
+        }
+      }
+      return FALSE;
+  }
+
+  /**
+   * CiviCRM Webform generates contact's address with abbreviation of state/province.
+   * This method takes the state/province abbreviation and replaces it with acutual id of the state.
+   * @param $contact
+   */
+  private function modifyStateProvinceId(&$contact) {
+      $addresses = $contact["address"];
+      foreach($addresses as $index => $address) {
+          $state_province = new CRM_Core_DAO_StateProvince();
+          $state_province->abbreviation = $address["state_province_id"];
+          if($state_province->find(TRUE)) {
+              $contact["address"][$index]["state_province_id"] = $state_province->id;
+          } else {
+              $contact["address"][$index]["state_province_id"] = NULL;
+          }
+      }
+  }
+
+  /**
+   * CiviCRM Webform generates Contribution params with id of state/province.
+   * This method takes the state/province id and replaces it with abbreviation of the state.
+   * @param $params
+   */
+  private function modifyStateProvinceAbb(&$params) {
+          $stateId = $params['billing_state_province_id-5'];
+          $state_province = new CRM_Core_DAO_StateProvince();
+          $state_province->id = $stateId;
+          if($state_province->find(TRUE)) {
+              $params["state_province"] = $state_province->abbreviation;
+          }
+  }
+
+  /**
+   * CiviCRM Webform generates Contribution params with id of country.
+   * This method takes the country id and replaces it with the value of the country.
+   * @param $params
+   */
+  private function modifyCountryAbb(&$params) {
+          $countryId = $params['billing_country_id-5'];
+
+	  $countryInfo = civicrm_api3('Country', 'get', array(
+            'sequential' => 1,
+            'id' => $countryId,
+          ));
+          if ($countryInfo['count'] > 0) {
+              $params["country"] = $countryInfo['values'][0]['name'];
+          }
+  }
+
+
+  /**
    * Create contact 1 if not already existing (required by contribution.transact)
    * @return int
    */
@@ -1743,6 +1827,11 @@ class wf_crm_webform_postprocess extends wf_crm_webform_base {
       $contact['contact'][1]['last_name']  = $this->billing_params['last_name'];
 
       $cid = $this->findDuplicateContact($contact);
+      if($cid) {
+        $foundExistingContact = TRUE;
+      }
+    } else {
+      $foundExistingContact = TRUE;
     }
     $address = array(
       'street_address' => $this->billing_params['street_address'],
@@ -1795,7 +1884,7 @@ class wf_crm_webform_postprocess extends wf_crm_webform_base {
     }
     else {
 
-      if ($contributionParams['billing_address_same'] == 1) {  
+      if ($contributionParams['billing_address_same'] == 1) {
         $contactDetails = $this->data['contact'][1];
         $contributionParams['billing_first_name'] = $contactDetails['contact'][1]['first_name'];
         $contributionParams['billing_last_name'] = $contactDetails['contact'][1]['last_name'];
@@ -1816,11 +1905,14 @@ class wf_crm_webform_postprocess extends wf_crm_webform_base {
           $contributionParams['city'] = $address['city'];
           $contributionParams['country_id'] = $address['country_id'];
           $contributionParams['postal_code'] = $address['postal_code'];
-          $contributionParams['state_province_id'] = $address['state_province_id'];
+          $contributionParams['state_province'] = $address['state_province_id'];
           break;
         }
+      } else {
+        $this->modifyStateProvinceAbb($contributionParams);
       }
 
+      $this->modifyCountryAbb($contributionParams);
       $result = wf_civicrm_api('contribution', 'transact', $contributionParams);
     }
 
