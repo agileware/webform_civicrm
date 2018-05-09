@@ -1763,12 +1763,12 @@ class wf_crm_webform_postprocess extends wf_crm_webform_base {
    * @param $params
    */
   private function modifyStateProvinceAbb(&$params) {
-          $stateId = $params['billing_state_province_id-5'];
-          $state_province = new CRM_Core_DAO_StateProvince();
-          $state_province->id = $stateId;
-          if($state_province->find(TRUE)) {
-              $params["state_province"] = $state_province->abbreviation;
-          }
+    $stateId = $params['billing_state_province_id-5'];
+    $state_province = new CRM_Core_DAO_StateProvince();
+    $state_province->id = $stateId;
+    if($state_province->find(TRUE)) {
+      $params["state_province"] = $state_province->abbreviation;
+    }
   }
 
   /**
@@ -1779,13 +1779,13 @@ class wf_crm_webform_postprocess extends wf_crm_webform_base {
   private function modifyCountryAbb(&$params) {
           $countryId = $params['billing_country_id-5'];
 
-	  $countryInfo = civicrm_api3('Country', 'get', array(
-            'sequential' => 1,
-            'id' => $countryId,
-          ));
-          if ($countryInfo['count'] > 0) {
-              $params["country"] = $countryInfo['values'][0]['name'];
-          }
+    try {
+      $countryInfo = civicrm_api3('Country', 'getvalue', array('id' => $countryId, 'return' => 'iso_code'));
+      $params["country"] = $countryInfo;
+    }
+    catch (CiviCRM_API3_Exception $e) {
+      watchdog('webform_civicrm', 'Could not set country code: @msg', array('@msg' => $e->getMessage()), WATCHDOG_ERROR);
+    }
   }
 
 
@@ -1908,11 +1908,10 @@ class wf_crm_webform_postprocess extends wf_crm_webform_base {
           $contributionParams['state_province'] = $address['state_province_id'];
           break;
         }
-      } else {
-        $this->modifyStateProvinceAbb($contributionParams);
       }
 
       $this->modifyCountryAbb($contributionParams);
+
       $result = wf_civicrm_api('contribution', 'transact', $contributionParams);
     }
 
