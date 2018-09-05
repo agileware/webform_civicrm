@@ -1407,10 +1407,11 @@ class wf_crm_webform_postprocess extends wf_crm_webform_base {
               // Send email to assignees. TODO: Move to CiviCRM API?
               $assignee = wf_civicrm_api('contact', 'getsingle', array('id' => $params['assignee_contact_id']));
               if (!empty($assignee['email'])) {
+                $caseId = (isset($params['case_id'])) ? $params['case_id'] : NULL;
                 $mail = array($assignee['email'] => $assignee);
                 // Include attachments while sending a copy of activity.
                 $attachments = CRM_Core_BAO_File::getEntityFile('civicrm_activity', $this->ent['act'][1]);
-                CRM_Case_BAO_Case::sendActivityCopy(NULL, $result['id'], $mail, $attachments, NULL);
+                CRM_Case_BAO_Case::sendActivityCopy(NULL, $result['id'], $mail, $attachments, $caseId);
               }
             }
           }
