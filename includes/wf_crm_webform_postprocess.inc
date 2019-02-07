@@ -1624,8 +1624,9 @@ class wf_crm_webform_postprocess extends wf_crm_webform_base {
       if ($this->payment_processor['billing_mode'] == self::BILLING_MODE_LIVE) {
         return TRUE;
       }
+      $paymentProcessor = $this->getPaymentProcessor($this->payment_processor['id']);
       // In mixed mode (where there is e.g. a PayPal button + credit card fields) the cc field will contain a placeholder if the button was clicked
-      if ($this->payment_processor['billing_mode'] == self::BILLING_MODE_MIXED && wf_crm_aval($_POST, 'credit_card_number') != 'express') {
+      if ($this->payment_processor['billing_mode'] == self::BILLING_MODE_MIXED && (wf_crm_aval($_POST, 'credit_card_number') != 'express' && !method_exists($paymentProcessor, 'doTransferCheckout'))) {
         return TRUE;
       }
     }
@@ -1895,23 +1896,36 @@ class wf_crm_webform_postprocess extends wf_crm_webform_base {
   }
 
   /**
-   * Call IPN payment processor to redirect to payment site
+   * Get payment processor by id.
+   *
+   * @param $paymentProcesserId
+   * @return CRM_Core_Payment|NULL
+   * @throws CiviCRM_API3_Exception
    */
-  private function submitIPNPayment() {
-    $params = $this->data['contribution'][1]['contribution'][1];
-    $processor_type = wf_civicrm_api('payment_processor', 'getsingle', array('id' => $params['payment_processor_id']));
+  private function getPaymentProcessor($paymentProcesserId) {
+    $processor_type = wf_civicrm_api('payment_processor', 'getsingle', array('id' => $paymentProcesserId));
     if (version_compare($this->civicrm_version, 4.7, '<')) {
       $mode = empty($params['is_test']) ? 'live' : 'test';
       $paymentProcessor = CRM_Core_Payment::singleton($mode, $processor_type);
     }
     else {
-      $paymentProcessor = \Civi\Payment\System::singleton()->getById($params['payment_processor_id']);
+      $paymentProcessor = \Civi\Payment\System::singleton()->getById($paymentProcesserId);
       // Ideally we would pass the correct id for the test processor through but that seems not to be the
       // case so load it here.
       if (!empty($params['is_test'])) {
         $paymentProcessor = \Civi\Payment\System::singleton()->getByName($processor_type['name'], TRUE);
       }
     }
+
+    return $paymentProcessor;
+  }
+
+  /**
+   * Call IPN payment processor to redirect to payment site
+   */
+  private function submitIPNPayment() {
+    $params = $this->data['contribution'][1]['contribution'][1];
+    $paymentProcessor = $this->getPaymentProcessor($params['payment_processor_id']);
     // Add contact details to params (most processors want a first_name and last_name)
     $contact = wf_civicrm_api('contact', 'getsingle', array('id' => $this->ent['contact'][1]['id']));
     $params += $contact;
