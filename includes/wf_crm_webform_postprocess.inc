@@ -2180,6 +2180,12 @@ class wf_crm_webform_postprocess extends wf_crm_webform_base {
           if (!isset($firstLineItem['contribution_id'])) {
             $item['id'] = $firstLineItem['id'];
           }
+          // Copy the first line item field id and field value id
+          // Both are required for update the membership accordingly when contribution is recorded.
+          else {
+            $item['price_field_id'] = $firstLineItem['price_field_id'];
+            $item['price_field_value_id'] = $firstLineItem['price_field_value_id'];
+          }
         }
       }
 
