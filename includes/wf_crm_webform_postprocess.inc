@@ -1647,11 +1647,14 @@ class wf_crm_webform_postprocess extends wf_crm_webform_base {
       $billingAddressFieldsMetadata = $processor->getBillingAddressFieldsMetadata();
     }
     $fields = CRM_Utils_Array::crmArrayMerge($processor->getPaymentFormFieldsMetadata(), $billingAddressFieldsMetadata);
+    $billing_same_address = (isset($_POST["billing_same_address"]) && $_POST["billing_same_address"]);
 
     foreach ($_POST as $field => $value) {
       if (empty($_POST[$field]) && isset($fields[$field]) && $fields[$field]['is_required'] !== FALSE) {
-        form_set_error($field, t('!name field is required.', array('!name' => check_plain($fields[$field]['title']))));
-        $valid = FALSE;
+        if(!$fields[$field]["is_billing_field"] || ($fields[$field]["is_billing_field"] && !$billing_same_address)) {
+          form_set_error($field, t('!name field is required.', array('!name' => check_plain($fields[$field]['title']))));
+          $valid = FALSE;
+        }
       }
       if (!empty($_POST[$field]) && array_key_exists($field, $fields)) {
         $name = str_replace('billing_', '', str_replace('-5', '', $field));
@@ -1697,30 +1700,41 @@ class wf_crm_webform_postprocess extends wf_crm_webform_base {
    */
   private function createBillingContact() {
     $cid = wf_crm_aval($this->existing_contacts, 1);
+    $billing_address_same = (isset($_POST["billing_same_address"]) && $_POST["billing_same_address"]);
+    $foundExistingContact = FALSE;
+    $contact = $this->data['contact'][1];
     if (!$cid) {
-      $contact = $this->data['contact'][1];
-      // Only use middle name from billing if we are using the rest of the billing name as well
-      if (empty($contact['contact'][1]['first_name']) && !empty($this->billing_params['middle_name'])) {
-        $contact['contact'][1]['middle_name'] = $this->billing_params['middle_name'];
+      if (!$billing_address_same) {
+        // Only use middle name from billing if we are using the rest of the billing name as well
+        if (empty($contact['contact'][1]['first_name']) && !empty($this->billing_params['middle_name'])) {
+          $contact['contact'][1]['middle_name'] = $this->billing_params['middle_name'];
+        }
+        $contact['contact'][1] += array(
+          'first_name' => $this->billing_params['first_name'],
+          'last_name' => $this->billing_params['last_name'],
+        );
       }
-      $contact['contact'][1] += array(
-        'first_name' => $this->billing_params['first_name'],
-        'last_name' => $this->billing_params['last_name'],
-      );
       $cid = $this->findDuplicateContact($contact);
+      if($cid) {
+        $foundExistingContact = FALSE;
+      }
+    } else {
+      $foundExistingContact = TRUE;
     }
-    $address = array(
-      'street_address' => $this->billing_params['street_address'],
-      'city' => $this->billing_params['city'],
-      'country_id' => $this->billing_params['country_id'],
-      'state_province_id' => wf_crm_aval($this->billing_params, 'state_province_id'),
-      'postal_code' => $this->billing_params['postal_code'],
-      'location_type_id' => 'Billing',
-    );
-    $email = array(
-      'email' => $this->billing_params['email'],
-      'location_type_id' => 'Billing',
-    );
+    if (!$billing_address_same) {
+      $address = array(
+        'street_address' => $this->billing_params['street_address'],
+        'city' => $this->billing_params['city'],
+        'country_id' => $this->billing_params['country_id'],
+        'state_province_id' => wf_crm_aval($this->billing_params, 'state_province_id'),
+        'postal_code' => $this->billing_params['postal_code'],
+        'location_type_id' => 'Billing',
+      );
+      $email = array(
+        'email' => $this->billing_params['email'],
+        'location_type_id' => 'Billing',
+      );
+    }
     if (!$cid) {
       $cid = $this->createContact($contact);
     }
@@ -1731,16 +1745,51 @@ class wf_crm_webform_postprocess extends wf_crm_webform_base {
           'location_type_id' => 'Billing',
         ));
         // Use first id if we have any results
-        if (!empty($result['values'])) {
+        if (!empty($result['values']) && !$billing_address_same) {
           $ids = array_keys($result['values']);
           ${$loc}['id'] = $ids[0];
         }
       }
     }
     if ($cid) {
-      $address['contact_id'] = $email['contact_id'] = $this->ent['contact'][1]['id'] = $cid;
-      wf_civicrm_api('address', 'create', $address);
-      wf_civicrm_api('email', 'create', $email);
+      $this->ent['contact'][1]['id'] = $cid;
+      if (!$billing_address_same) {
+        $address['contact_id'] = $email['contact_id'] = $cid;
+        if (!$this->isBillingAddressIdentical($contact)) {
+          wf_civicrm_api('address', 'create', $address);
+        }
+        if (!$this->isBillingEmailIdentical($contact) || !$foundExistingContact) {
+          wf_civicrm_api('email', 'create', $email);
+        }
+      } else {
+        $contact = $this->data['contact'][1];
+        if (isset($contact["address"]) && count($contact["address"])) {
+          foreach ($contact["address"] as $address) {
+            $address['contact_id'] = $cid;
+            $address['state_province_id'] = NULL;
+            $address['sequential'] = TRUE;
+            $existingAddress = wf_civicrm_api('address', 'get', array(
+              "contact_id"       => $cid,
+              "location_type_id" => $address["location_type_id"],
+            ));
+            if (!$existingAddress["count"]) {
+              wf_civicrm_api('address', 'create', $address);
+            }
+          }
+        }
+        if (isset($contact["email"]) && count($contact["email"])) {
+          foreach ($contact["email"] as $email) {
+            $email['contact_id'] = $cid;
+            $existingEmail = wf_civicrm_api('email', 'get', array(
+              "contact_id"       => $cid,
+              "location_type_id" => $email["location_type_id"],
+            ));
+            if (!$existingEmail["count"]) {
+              wf_civicrm_api('email', 'create', $email);
+            }
+          }
+        }
+      }
     }
     return $cid;
   }

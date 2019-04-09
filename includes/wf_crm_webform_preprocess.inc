@@ -166,6 +166,52 @@ class wf_crm_webform_preprocess extends wf_crm_webform_base {
     $this->fillForm($this->form['submitted'], $submitted);
   }
 
+  private function getAddressFields() {
+    return array(
+      'address_street_address'     => FALSE,
+      'address_postal_code'        => FALSE,
+      'address_city'               => FALSE,
+      'address_country_id'         => FALSE,
+      'address_state_province_id'  => FALSE,
+      'contact_first_name'         => FALSE,
+      'contact_last_name'          => FALSE,
+    );
+  }
+
+  private function hasAllAddressFieldsSubmitted() {
+    if ($_SERVER['REQUEST_METHOD'] == "POST" && isset($_POST) && isset($_POST['submitted']) && !empty($_POST['submitted'])) {
+      $values = array();
+      $this->getAllSubmittedValues($_POST['submitted'], $values);
+      $keys = array_keys($values);
+      $addressFields = $this->getAddressFields();
+      foreach ($keys as $key) {
+        $matches = array();
+        preg_match('/civicrm_\d_contact_\d_([a-z_]*)$/', $key, $matches);
+        if (count($matches) >= 2) {
+          $contactMatchedKey = $matches[1];
+          if (isset($addressFields[$contactMatchedKey])) {
+            $addressFields[$contactMatchedKey] = TRUE;
+          }
+        }
+      }
+      if (count(array_unique($addressFields)) == 1) {
+        return TRUE;
+      }
+    }
+    return FALSE;
+  }
+
+  private function getAllSubmittedValues($submitted, &$values) {
+    foreach ($submitted as $submittedKey => $submittedValue) {
+      if (is_array($submittedValue)) {
+        $this->getAllSubmittedValues($submittedValue, $values);
+      }
+      elseif(isset($submittedValue) && !empty($submittedValue)) {
+        $values[$submittedKey] = $submittedValue;
+      }
+    }
+  }
+
   /**
    * Add necessary js & css to the form
    */
@@ -208,6 +254,9 @@ class wf_crm_webform_preprocess extends wf_crm_webform_base {
         $contributionCallbackQuery = array('reset' => 1, 'id' => $page_id, 'qfKey' => $this->getQfKey(), 'snippet' => 4);
         $contributionCallbackUrl = 'civicrm/contribute/transact';
         $js_vars['processor_id_key'] = 'type';
+      }
+      if ($this->hasAllAddressFieldsSubmitted()) {
+        $contributionCallbackQuery['profileAddressFields'] = 1;
       }
       if (!empty($this->data['contribution'][1]['contribution'][1]['is_test'])) {
         // RM: This is needed in order for CiviCRM to know that this is a 'test' (i.e. 'preview' action in CiviCRM) transaction - otherwise, CiviCRM defaults to 'live' and returns the payment form with public key for the live payment processor!
